@@ -149,7 +149,7 @@ NSString * const XBHTTPRequestBuilderErrorDomain = @"XBHTTPRequestBuilderErrorDo
     URLRequest.cachePolicy = request.cachePolicy;
     URLRequest.timeoutInterval = [self timeoutForRequest:request];
     if (request.cookiePolicy == XBHTTPCookiePolicyDisabled) {
-        // 当前项目默认使用显式参数鉴权，禁止历史 Cookie 污染无 Cookie 协议接口并导致 400。
+        // 禁用策略同时关闭系统 Cookie 处理并清理显式 Cookie 头，避免历史登录态混入无 Cookie 接口。
         URLRequest.HTTPShouldHandleCookies = NO;
         [URLRequest setValue:nil forHTTPHeaderField:@"Cookie"];
     } else {
@@ -158,7 +158,7 @@ NSString * const XBHTTPRequestBuilderErrorDomain = @"XBHTTPRequestBuilderErrorDo
     return URLRequest;
 }
 
-/// 沿用 AFNetworking 的 Query 编码规则，保持旧接口的参数字节格式。
+/// 沿用 AFNetworking 对嵌套参数的 Query 编码规则；只追加字段，不替换 URL 已有同名 Query。
 - (NSString *)URLStringByAppendingQueryParameters:(NSDictionary<NSString *, id> *)queryParameters
                                         URLString:(NSString *)URLString
                                             error:(NSError **)error {
@@ -197,6 +197,7 @@ NSString * const XBHTTPRequestBuilderErrorDomain = @"XBHTTPRequestBuilderErrorDo
         NSError *serializationError = nil;
         NSMutableURLRequest *temporaryRequest = nil;
         @try {
+            // 此临时 URL 只用于取出表单编码字节，不会发起 localhost 网络请求。
             temporaryRequest = [[AFHTTPRequestSerializer serializer] requestWithMethod:@"POST"
                                                                               URLString:@"https://localhost/"
                                                                              parameters:body.parameters ?: @{}
@@ -370,8 +371,8 @@ NSString * const XBHTTPRequestBuilderErrorDomain = @"XBHTTPRequestBuilderErrorDo
     return YES;
 }
 
-/// 保留旧 AFNetworking 请求的 Accept-Language 和 User-Agent 默认值；
-/// 业务 headers 在其后应用，仍可按单个接口覆盖。
+/// 提供 AFNetworking 序列化器的 Accept-Language 和 User-Agent 默认值；
+/// 配置头和单请求头稍后应用，仍可覆盖这两个默认字段。
 - (void)applyDefaultHeadersToURLRequest:(NSMutableURLRequest *)URLRequest {
     static NSDictionary<NSString *, NSString *> *defaultHeaders = nil;
     static dispatch_once_t onceToken;

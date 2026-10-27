@@ -1,3 +1,5 @@
+// 请求入口只负责“配置如何应用”：复制请求 → 合并请求头/公共参数 → 适配器 → 客户端。
+// 具体字节编码交给 Builder，网络传输交给 Client，响应解码交给 Parser。
 #import "XBNetwork.h"
 #import "XBHTTPBody.h"
 #import "../Internal/XBNetworkClient.h"
@@ -25,6 +27,8 @@
 - (void)cancelAllRequests { [self.client cancelAllRequests]; }
 - (void)invalidateAndCancel { [self.client invalidateAndCancel]; }
 - (void)dealloc { [self.client invalidateAndCancel]; }
+/// 仅操作本次私有副本，避免公共参数、适配器污染调用方下次复用的描述。
+/// 此方法同步执行，Provider/Adapter 不应在这里发起异步准备后再修改副本。
 - (XBHTTPRequest *)prepareRequest:(XBHTTPRequest *)request error:(NSError **)error {
     if (![request isKindOfClass:XBHTTPRequest.class]) {
         *error = XBNetworkMakeError(XBNetworkErrorRequestBuildFailed, @"Request is required", nil,nil,nil,nil,nil);
@@ -33,7 +37,7 @@
     XBHTTPRequest *copy = [request copy];
     @try {
         NSMutableDictionary *headers = [self.configuration.defaultHeaders mutableCopy];
-        // Header names are case insensitive; explicit per-request values win.
+        // HTTP 头名称不区分大小写：先移除默认头中的同名字段，再写入单请求值。
         for (NSString *key in copy.headers) {
             for (NSString *existing in [headers.allKeys copy]) {
                 if ([existing caseInsensitiveCompare:key] == NSOrderedSame) [headers removeObjectForKey:existing];
@@ -41,6 +45,7 @@
             headers[key] = copy.headers[key];
         }
         copy.headers = headers;
+        // 只有主动选择合并位置才调用 Provider；先放公共字段，再放请求字段实现“请求优先”。
         if (copy.commonParameterPlacement != XBCommonParameterPlacementNone &&
             copy.commonParameterPlacement <= XBCommonParameterPlacementBody) {
             NSDictionary *common = self.configuration.commonParametersProvider ? self.configuration.commonParametersProvider(copy) : @{};
@@ -57,12 +62,14 @@
                     [merged addEntriesFromDictionary:body.JSONObject];
                     copy.body = [XBHTTPBody JSONBodyWithJSONObject:merged];
                 } else {
+                    // 原始字节、JSON 数组或无 Body 不能直接插入字典字段，必须由调用方改协议配置。
                     *error = XBNetworkMakeError(XBNetworkErrorRequestBuildFailed, @"Common Body parameters require a dictionary JSON, Form or Multipart body",nil,nil,nil,nil,nil);
                     return nil;
                 }
             }
             copy.commonParameterPlacement = XBCommonParameterPlacementNone;
         }
+        // 适配器最后处理可配置描述，因此签名/鉴权可读取已合并参数；此时还未编码成 URLRequest。
         NSError *adapterError = nil;
         if (self.configuration.requestAdapter && !self.configuration.requestAdapter(copy, &adapterError)) {
             *error = XBNetworkMakeError(XBNetworkErrorRequestBuildFailed, adapterError.localizedDescription ?: @"Request rejected by adapter",nil,nil,nil,nil,adapterError);
@@ -159,6 +166,7 @@
 - (NSURLSessionTask *)sendRequest:(XBHTTPRequest *)request
                   uploadProgress:(XBNetworkProgress)uploadProgress
                       completion:(XBNetworkResultCompletion)completion {
+    // 简化回调与完整回调共用一条发送链路，只在这里取出解析对象，不重复执行网络或解析。
     return [self sendRequest:request
               uploadProgress:uploadProgress
           detailedCompletion:^(XBHTTPResponse *response, NSError *error) {
@@ -174,6 +182,7 @@
     NSError *error = nil;
     XBHTTPRequest *resolved = [self prepareRequest:request error:&error];
     if (!resolved) {
+        // 发送前失败也保持异步回调，避免调用方因“有时同步、有时异步”产生状态更新问题。
         if (completion) dispatch_async(self.configuration.completionQueue, ^{ completion(nil, error); });
         return nil;
     }

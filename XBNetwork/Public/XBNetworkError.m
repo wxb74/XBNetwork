@@ -11,6 +11,7 @@ NSString * const XBNetworkErrorResponseKey = @"XBNetworkErrorResponseKey";
 NSString * const XBNetworkErrorResponseDataKey = @"XBNetworkErrorResponseDataKey";
 NSString * const XBNetworkErrorResponseObjectKey = @"XBNetworkErrorResponseObjectKey";
 
+// 底层错误可能有多层包装；限制遍历深度，兼容异常或循环的 underlyingError 链。
 static BOOL XBNetworkErrorContains(NSError *error, BOOL (^matcher)(NSError *error), NSUInteger depth) {
     if (error == nil || depth > 8) {
         return NO;

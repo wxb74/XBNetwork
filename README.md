@@ -2,6 +2,18 @@
 
 Objective-C HTTP 组件，基于 `NSURLSession`，iOS 15+。明确区分 Query 和 Body，提供可配置公共参数、请求适配、上传进度、Cookie 隔离、传输总预算和结构化错误。
 
+首次接入建议依次阅读：下方的安装与快速开始 → [中文使用指南](Docs/使用指南.md) → 对应公开头文件中的接口注释。指南包含方法选择、公共参数优先级、完整响应、取消和日志示例。
+
+| 想解决的问题 | 入口 |
+|---|---|
+| 发送 GET、表单或 JSON | [`XBNetwork.h`](XBNetwork/Public/XBNetwork.h) |
+| 设置鉴权、公共参数和回调队列 | [`XBNetworkConfiguration.h`](XBNetwork/Public/XBNetworkConfiguration.h) |
+| 设置超时、Cookie、空响应和解析类型 | [`XBHTTPRequest.h`](XBNetwork/Public/XBHTTPRequest.h) |
+| 上传文件或发送原始字节 | [`XBHTTPBody.h`](XBNetwork/Public/XBHTTPBody.h) |
+| 读取 HTTP 状态、响应头和原始数据 | [`XBHTTPResponse.h`](XBNetwork/Public/XBHTTPResponse.h) |
+| 判断取消、超时、断网与 HTTP 失败 | [`XBNetworkError.h`](XBNetwork/Public/XBNetworkError.h) |
+| 接入自定义日志 | [`XBNetworkLogger.h`](XBNetwork/Public/XBNetworkLogger.h) |
+
 ## 安装
 
 在 Podfile 中使用发布标签：
@@ -11,6 +23,8 @@ pod 'XBNetwork', :git => 'https://github.com/wxb74/XBNetwork.git', :tag => 'v0.1
 ```
 
 然后执行 `pod install`，打开 `.xcworkspace`。仓库发布不等于 CocoaPods 公共索引发布，目前请使用上面的 Git 方式。
+
+以上标签固定在 0.1.0。最新中文注释与指南位于 `main`，不会改写已发布标签；需要通过 Pod 使用当前分支源码时可改为 `:branch => 'main'`，使用 `pod update XBNetwork` 更新已锁定版本。
 
 组件仅依赖 `AFNetworking/Serialization ~> 4.0.1`，不使用 AFNetworking 的会话、网络监测或 UIKit 扩展。AFNetworking 已弃用；首版保留其参数编码行为，后续替换编码器前需要验证嵌套参数和 Multipart 字节兼容性。
 
@@ -118,6 +132,8 @@ NSURLSessionTask *task = [network sendRequest:request
 
 `configuration.logger` 默认为 nil。实现 `XBNetworkLogger` 可接收开始和结束事件。事件省略 Body，移除 URL 用户名、密码、Fragment，遮盖所有 Query 值和 Header 值；只包含方法、URL 路径及脱敏字段、状态码、耗时、错误码。日志回调可能发生在不同线程，接收端应保证线程安全，避免与持有它的 Network 形成循环引用。日志异常不会中断请求。URL 路径本身包含敏感内容时，宿主应进一步过滤或保持日志关闭。
 
+公开版本的日志不受 `DEBUG` 宏限制；Release 需要关闭时不要配置 logger。它只输出事件，不自动生成控制台文本、页面日志或业务调用链；宿主可在接收者中选择展示方式。HTTP 失败时事件的状态码可能为 0，真实状态可在完成回调的 `error.userInfo[XBNetworkErrorResponseKey]` 中读取。详细字段见协议注释和[日志示例](Docs/使用指南.md#接入日志)。
+
 完整响应和 NSError.userInfo 仍包含业务所需的原始请求/响应，调用方不应直接打印或上传这些原始对象。
 
 ## Demo 与测试
@@ -151,6 +167,6 @@ ruby Scripts/validate-pod.rb
 
 公开组件的类、文件、枚举、函数和错误域均使用 XB 前缀。请求构建器、解析器、会话客户端为内部头文件。
 
-原业务可以保留 CXNetwork 薄适配层：继续处理 App 公共参数、旧错误域和调试日志，内部转换到 XB 请求发送。适配层及业务源码不随此仓库发布。新页面可直接使用 XBNetwork。旧 HttpErrorType/HttpRequestType 继续由原业务管理。
+迁移时在宿主配置公共参数、鉴权和日志，再让页面调用配置好的 XBNetwork 实例。旧错误枚举或旧接口兼容如需保留，由宿主自行适配；组件不会隐式识别旧业务字段。宿主适配层及业务源码不随此仓库发布。
 
 MIT License.

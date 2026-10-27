@@ -42,6 +42,7 @@ static id XBJSONObjectFromData(NSData *data, NSError **error) {
         acceptableStatusCodes = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(200, 100)];
     }
     if (![acceptableStatusCodes containsIndex:(NSUInteger)HTTPResponse.statusCode]) {
+        // 先判 HTTP 失败，避免服务端错误页被误报为普通解码错误；JSON 错误体尽量留给宿主使用。
         id responseObject = XBJSONObjectFromData(responseData, nil);
         NSString *message = [NSString stringWithFormat:@"HTTP 请求失败（状态码 %ld）", (long)HTTPResponse.statusCode];
         [self assignError:error value:XBNetworkMakeError(XBNetworkErrorUnacceptableStatusCode,
@@ -51,6 +52,7 @@ static id XBJSONObjectFromData(NSData *data, NSError **error) {
     }
 
     if (responseData.length == 0) {
+        // 不自动豁免 HEAD/204；是否允许空结果是接口协议，需要调用方主动配置。
         if (!request.allowsEmptyResponse) {
             [self assignError:error value:XBNetworkMakeError(XBNetworkErrorEmptyResponse,
                                                             @"服务器返回了空数据",

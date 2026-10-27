@@ -21,9 +21,11 @@ typedef NS_ENUM(NSInteger, XBHTTPRequestBuilderErrorCode) {
     XBHTTPRequestBuilderErrorInvalidRequest
 };
 
+/// 内部编码器，不处理用户/设备公共参数，不发网络请求；仅接收已由 XBNetwork 准备好的描述。
 @interface XBHTTPRequestBuilder : NSObject
 
 /// 构建最终请求。失败时不会产生半成品请求，error 会说明协议配置或编码错误。
+/// Query 与 Body 分开编码，统一检查 URL、方法、Cookie 和 Content-Type；不在此猜测业务协议。
 - (nullable NSMutableURLRequest *)buildURLRequestFromRequest:(XBHTTPRequest *)request
                                                        error:(NSError **)error;
 

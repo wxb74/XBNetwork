@@ -4,6 +4,7 @@
 #import "XBNetworkError.h"
 #import <math.h>
 
+// NSURLSession 强持有 delegate；代理弱引用客户端，打断 Session → Client → Session 循环。
 @interface XBNetworkDelegateProxy : NSObject <NSURLSessionTaskDelegate>
 @property (nonatomic, weak) id<NSURLSessionTaskDelegate> target;
 @end
@@ -13,6 +14,7 @@
 }
 @end
 
+// 每个请求各自持有完成状态和总超时计时器；所有竞争结果必须通过同一个 finish 门。
 @interface XBNetworkRequestState : NSObject
 @property (nonatomic) BOOL completed;
 @property (nonatomic, strong) dispatch_source_t timer;
@@ -36,6 +38,7 @@
         _progressHandlers = [NSMutableDictionary dictionary];
         _delegateProxy = [XBNetworkDelegateProxy new];
         _delegateProxy.target = self;
+        // 仅关闭 NSURLRequest 的 Cookie 开关不足以隔离存储，因此使用无 CookieStorage 的独立会话。
         NSURLSessionConfiguration *disabled = [configuration.sessionConfiguration copy] ?: [NSURLSessionConfiguration defaultSessionConfiguration];
         disabled.HTTPShouldSetCookies = NO;
         disabled.HTTPCookieStorage = nil;
@@ -47,6 +50,7 @@
     }
     return self;
 }
+/// 只构造脱敏元数据，不读取 HTTPBodyStream；日志接收者异常不影响传输和完成回调。
 - (void)recordRequest:(NSURLRequest *)request response:(XBHTTPResponse *)response error:(NSError *)error phase:(NSString *)phase {
     id<XBNetworkLogger> logger = self.configuration.logger;
     if (!logger) return;
@@ -63,6 +67,7 @@
     } @catch (__unused NSException *exception) { }
 }
 - (NSURLSessionTask *)performRequest:(XBHTTPRequest *)request uploadProgress:(XBNetworkUploadProgress)progress completion:(XBNetworkCompletion)completion {
+    // 解析使用同一个快照，避免发送后外部修改 responseType、空响应规则等影响正在执行的任务。
     XBHTTPRequest *snapshot = [request copy];
     NSError *buildError = nil;
     NSURLRequest *URLRequest = [[XBHTTPRequestBuilder new] buildURLRequestFromRequest:snapshot error:&buildError];
@@ -73,6 +78,7 @@
         return nil;
     }
     XBNetworkRequestState *state = [XBNetworkRequestState new];
+    // 总超时、取消和传输完成可能同时到达：只接纳第一个结果，并取消计时器防止重复交付。
     BOOL (^finish)(XBHTTPResponse *, NSError *) = ^BOOL(XBHTTPResponse *response, NSError *error) {
         @synchronized (state) {
             if (state.completed) return NO;
@@ -106,6 +112,7 @@
         }];
         weakTask = task;
         if (progress) {
+            // 进度投递到业务队列后可能已经过时，真正执行前再检查一次完成状态。
             @synchronized (self.progressHandlers) {
                 self.progressHandlers[[self keyForSession:session task:task]] = ^(NSProgress *value) {
                     @synchronized (state) { if (state.completed) return; }
@@ -113,7 +120,7 @@
                 };
             }
         }
-        // Bound the conversion to dispatch_time's signed nanoseconds range.
+        // 总预算独立于系统等待数据超时；换算纳秒时限幅，防止 dispatch_time 的有符号整数溢出。
         if (isfinite(snapshot.totalTimeout) && snapshot.totalTimeout > 0) {
             state.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER,0,0,dispatch_get_global_queue(QOS_CLASS_UTILITY,0));
             int64_t ns = (int64_t)(MIN(snapshot.totalTimeout, (double)INT64_MAX / NSEC_PER_SEC / 2) * NSEC_PER_SEC);
@@ -129,6 +136,7 @@
     }
     return task;
 }
+// 不同会话的 taskIdentifier 可重复，以会话地址和任务标识共同区分上传回调。
 - (NSString *)keyForSession:(NSURLSession *)session task:(NSURLSessionTask *)task { return [NSString stringWithFormat:@"%p-%lu",session,(unsigned long)task.taskIdentifier]; }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didSendBodyData:(int64_t)bytesSent totalBytesSent:(int64_t)sent totalBytesExpectedToSend:(int64_t)expected {
     XBNetworkUploadProgress progress;
@@ -138,6 +146,7 @@
     value.completedUnitCount = expected > 0 ? MIN(sent,expected) : sent;
     dispatch_async(self.configuration.completionQueue, ^{ progress(value); });
 }
+/// 所有完成结果（含本地构建失败）统一异步交付，不在 NSURLSession 线程执行宿主 UI 逻辑。
 - (void)complete:(XBNetworkCompletion)completion response:(XBHTTPResponse *)response error:(NSError *)error {
     if (completion) dispatch_async(self.configuration.completionQueue, ^{ completion(response,error); });
 }
