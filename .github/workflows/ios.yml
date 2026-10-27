@@ -1,0 +1,20 @@
+name: iOS
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+      - run: gem install cocoapods -v 1.16.2 --no-document
+      - run: pod install --no-repo-update
+      - name: Choose available iPhone simulator
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if x["name"].startswith("iPhone")))')
+          echo "XB_SIMULATOR=$DEVICE" >> "$GITHUB_ENV"
+      - run: xcodebuild -workspace XBNetworkDemo.xcworkspace -scheme XBNetworkDemo -destination "platform=iOS Simulator,id=$XB_SIMULATOR" -derivedDataPath build CODE_SIGNING_ALLOWED=NO test
+      - run: ruby Scripts/validate-pod.rb

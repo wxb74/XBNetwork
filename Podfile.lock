@@ -1,0 +1,23 @@
+PODS:
+  - AFNetworking/Serialization (4.0.1)
+  - XBNetwork (0.1.0):
+    - AFNetworking/Serialization (~> 4.0.1)
+
+DEPENDENCIES:
+  - XBNetwork (from `.`)
+
+SPEC REPOS:
+  trunk:
+    - AFNetworking
+
+EXTERNAL SOURCES:
+  XBNetwork:
+    :path: "."
+
+SPEC CHECKSUMS:
+  AFNetworking: 3bd23d814e976cd148d7d44c3ab78017b744cd58
+  XBNetwork: dc53c74ca9f4809454e3ec02beea51890324b41c
+
+PODFILE CHECKSUM: 9f556931b80d391de6af771e5755107f0cd0aed2
+
+COCOAPODS: 1.16.2
